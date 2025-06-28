@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Controlled Stopwatch</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .stopwatch {
+            font-size: 48px;
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="stopwatch" id="display">00:00:00.000</div>
+    <div class="controls">
+        <button onclick="startStopwatch()">Start</button>
+        <button onclick="stopStopwatch()">Stop</button>
+        <button onclick="resetStopwatch()">Reset</button>
+        <button onclick="toggleVoiceControl()">Voice Control</button>
+    </div>
+    <div id="status">Voice control: Off</div>
+
+    <script>
+        let time = 0;
+        let running = false;
+        let interval;
+        let recognition;
+        let voiceActive = false;
+        let lastRestartAttempt = 0;
+        const RESTART_DELAY = 1000; // Delay in ms to prevent rapid restart attempts
+
+        const display = document.getElementById('display');
+        const status = document.getElementById('status');
+
+        function updateDisplay() {
+            const hours = Math.floor(time / 3600000);
+            const minutes = Math.floor((time % 3600000) / 60000);
+            const seconds = Math.floor((time % 60000) / 1000);
+            const milliseconds = time % 1000;
+            display.textContent = 
+                `${hours.toString().padStart(2, '0')}:` +
+                `${minutes.toString().padStart(2, '0')}:` +
+                `${seconds.toString().padStart(2, '0')}.` +
+                `${milliseconds.toString().padStart(3, '0')}`;
+        }
+
+        function startStopwatch() {
+            if (!running) {
+                running = true;
+                interval = setInterval(() => {
+                    time += 10;
+                    updateDisplay();
+                }, 10);
+                console.log('Stopwatch started');
+            }
+        }
+
+        function stopStopwatch() {
+            if (running) {
+                running = false;
+                clearInterval(interval);
+                console.log('Stopwatch stopped');
+            }
+        }
+
+        function resetStopwatch() {
+            running = false;
+            clearInterval(interval);
+            time = 0;
+            updateDisplay();
+            console.log('Stopwatch reset');
+        }
+
+        function startRecognition() {
+            if (!voiceActive || recognition) return;
+
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            console.log('SpeechRecognition initialized');
+
+            recognition.onstart = () => {
+                console.log('Speech recognition started');
+                status.textContent = 'Voice control: Listening...';
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+                console.log('Heard:', transcript);
+                status.textContent = `Heard: ${transcript}`;
+                
+                if (transcript.includes('start')) {
+                    startStopwatch();
+                } else if (transcript.includes('stop')) {
+                    stopStopwatch();
+                } else if (transcript.includes('reset')) {
+                    resetStopwatch();
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.log('Speech recognition error:', event.error);
+                status.textContent = `Error: ${event.error}`;
+                if (event.error === 'not-allowed') {
+                    status.textContent = 'Error: Microphone access denied. Please allow microphone access and try again.';
+                    voiceActive = false; // Disable voice control to prevent infinite loop
+                    recognition = null;
+                }
+            };
+
+            recognition.onend = () => {
+                console.log('Speech recognition ended, voiceActive:', voiceActive);
+                if (voiceActive) {
+                    const now = Date.now();
+                    if (now - lastRestartAttempt >= RESTART_DELAY) {
+                        lastRestartAttempt = now;
+                        try {
+                            recognition.start();
+                            console.log('Attempted to restart recognition');
+                        } catch (error) {
+                            console.log('Error restarting recognition:', error);
+                            status.textContent = `Error restarting voice control: ${error.message}`;
+                            voiceActive = false;
+                            recognition = null;
+                        }
+                    } else {
+                        console.log('Restart delayed to prevent rapid attempts');
+                        setTimeout(() => {
+                            if (voiceActive && !recognition) startRecognition();
+                        }, RESTART_DELAY);
+                    }
+                }
+            };
+
+            try {
+                recognition.start();
+                console.log('Attempted to start recognition');
+            } catch (error) {
+                console.log('Error starting recognition:', error);
+                status.textContent = `Error starting voice control: ${error.message}`;
+                voiceActive = false;
+                recognition = null;
+            }
+        }
+
+        function toggleVoiceControl() {
+            console.log('Toggling voice control, current state:', voiceActive);
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Your browser does not support speech recognition. Please use Google Chrome.');
+                console.log('SpeechRecognition not supported');
+                return;
+            }
+
+            voiceActive = !voiceActive;
+            status.textContent = `Voice control: ${voiceActive ? 'On' : 'Off'}`;
+            console.log('Voice control set to:', voiceActive);
+
+            if (voiceActive) {
+                startRecognition();
+            } else if (recognition) {
+                recognition.stop();
+                recognition = null;
+                console.log('Speech recognition stopped');
+            }
+        }
+
+        updateDisplay();
+    </script>
+</body>
+</html>
